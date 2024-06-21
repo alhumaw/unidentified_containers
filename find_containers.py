@@ -55,6 +55,7 @@ WHALE = r"""
        \          x     | o
         `,.__.   ,__.--/
           '._/_.'___.-`
+    ~^~^~^~^~^~^~^~^~^~^~^~^~^      
     """
 
 
@@ -79,7 +80,7 @@ def parse_command_line() -> ArgumentParser:
     parser.add_argument("-v", "--verbose",
                         help="Display additional information about the containers.",
                         )
-    parser.add_argument("-Id", "--identifier",
+    parser.add_argument("-i", "--identifier",
                         help="Select a specific pod_id")
     
     parsed = parser.parse_args()
@@ -87,6 +88,7 @@ def parse_command_line() -> ArgumentParser:
     return parsed
 
 class Pod:
+    """"""
     def __init__(self, pod_id) -> None:
 
         self.pod_id = pod_id
@@ -115,14 +117,10 @@ def get_pods(falcon: APIHarnessV2) -> list:
 
         cur_pod = Pod(pod.get('pod_id', None))
         image_name = pod.get('image_name')
-        if image_name == skip_image:
-            continue
         # Retrieve impacted containers
         containers = pod.get('containers_impacted')
         for cur_container in containers:
-            
             cur_pod.containers.append(cur_container.get('container_id'))
-
 
         # Retrieve unique unassessed images
         images = pod.get('unassessed_images')
@@ -136,7 +134,7 @@ def get_pods(falcon: APIHarnessV2) -> list:
         cur_pod.name    = pod.get('pod_name')
         cur_pod.visible = pod.get('visible_to_k8s') if pod.get('visible_to_k8s') == "Yes" else False
 
-        if len(cur_pod.containers) > 0:
+        if len(cur_pod.containers) > 0 and image_name is not skip_image:
             pods.append(cur_pod)
     return pods
 
@@ -153,9 +151,16 @@ def connect_api(key: str, secret: str, debug: bool):
         logging.basicConfig(level=logging.DEBUG)
     return APIHarnessV2(client_id=key, client_secret=secret, debug=debug)
 
+def sum_containers(pods: Pod) -> int:
+    """Returns the total number of all containers"""
+    count = 0
+    for pod in pods:
+        count += len(pod.containers)
+    return count
+
 def main():
     """Execute main routine."""
-    print(WHALE)
+    print(colored(WHALE, "blue"))
 
     args   = parse_command_line()
     falcon = connect_api(key=args.key,secret=args.secret, debug=False)
@@ -163,8 +168,15 @@ def main():
     tables = []
     rogue_containers = []
     headers = ["Pod ID","Unidentified Containers","Severity"]
-    if not args.identifier:
-        print(f"Found {len(pods)} pods with , use -Id to examine a specific pod")
+    num_pods = colored(len(pods),"red")
+    num_containers = colored(sum_containers(pods),"red")
+    if args.identifier:
+        for pod in pods:
+            if pod.pod_id == args.identifier:
+                print(pod)
+    
+    else:
+        print(colored(f"Found {num_pods} {colored('pods with',"yellow")} {num_containers} {colored('unidentified containers, use -i to examine a specific pod','yellow')}\n", "yellow"))
         for pod in pods:
             if not pod.pod_id:
                 rogue_containers.append(pod)
