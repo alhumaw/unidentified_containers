@@ -19,6 +19,11 @@ then download a malicious tool in the container to compromise the entire infrast
 Because this malicious container wasn’t launched using Kubernetes, it isn’t visible to Kubernetes. 
 Such containers launched directly on a Kubernetes-managed node should be investigated.
 
+Use the Unidentified containers dashboard (Investigate > Unidentified containers) 
+to quickly identify runtime container workloads with an unauthorized image 
+(one that has not been assessed in Image Assessment for vulnerabilities and malware) 
+and containers launched outside the Kubernetes orchestrator.
+
 Developed by @alhumaw
 
 """
@@ -82,12 +87,12 @@ def parse_command_line() -> ArgumentParser:
     return parsed
 
 class Pod:
-    def __init__(self, podID) -> None:
-        
-        self.podID = podID
+    def __init__(self, pod_id) -> None:
+
+        self.pod_id = pod_id
         self.containers = []
-        self.unassessedImages = []
-        self.detectionTimestamp = ""
+        self.unassessed_images = []
+        self.detection_timestamp = ""
         self.risk = ""
         self.name = ""
         self.visible = False
@@ -95,37 +100,46 @@ class Pod:
     def __str__(self) -> str:
         return tabulate([["Pod Name", self.name] if self.name else None,
                          ["Containers", self.containers],
-                         ["Unassessed Images", self.unassessedImages],
+                         ["Unassessed Images", self.unassessed_images],
                          ["Severity", self.risk],
                          ["Visible to k8s", self.visible]], 
                          tablefmt="heavy_grid")
 
 def get_pods(falcon: APIHarnessV2) -> list:
+    """Parses API response to build Pods. Returns a list of Pods."""
     pods = []
     resp = falcon.command("SearchAndReadUnidentifiedContainers")['body']['resources']
+    # This is a bad way to circumvent crowdstrike images that display as high severity
+    skip_image = "quay.io/crowdstrike/detection-container:latest"
     for pod in resp:
-        cur_pod = Pod(pod.get('pod_id'))
-        
+
+        cur_pod = Pod(pod.get('pod_id', None))
+        image_name = pod.get('image_name')
+        if image_name == skip_image:
+            continue
         # Retrieve impacted containers
         containers = pod.get('containers_impacted')
         for cur_container in containers:
+            
             cur_pod.containers.append(cur_container.get('container_id'))
-        
+
+
         # Retrieve unique unassessed images
         images = pod.get('unassessed_images')
         for cur_image in images:
-            imageName = cur_image.get('image_name')
-            if imageName not in cur_pod.unassessedImages:
-                cur_pod.unassessedImages.append(imageName)
-        
-        cur_pod.detectionTimestamp = pod.get('detect_timestamp')
-        cur_pod.risk = pod.get('severity')
-        cur_pod.name = pod.get('pod_name')
+            image_name = cur_image.get('image_name')
+            if image_name not in cur_pod.unassessed_images:
+                cur_pod.unassessed_images.append(image_name)
+
+        cur_pod.detection_timestamp = pod.get('detect_timestamp')
+        cur_pod.risk    = pod.get('severity')
+        cur_pod.name    = pod.get('pod_name')
         cur_pod.visible = pod.get('visible_to_k8s') if pod.get('visible_to_k8s') == "Yes" else False
 
-        pods.append(cur_pod)
+        if len(cur_pod.containers) > 0:
+            pods.append(cur_pod)
     return pods
-        
+
 
 def delete_containers():
     pass
@@ -141,19 +155,26 @@ def connect_api(key: str, secret: str, debug: bool):
 
 def main():
     """Execute main routine."""
+    print(WHALE)
+
     args   = parse_command_line()
     falcon = connect_api(key=args.key,secret=args.secret, debug=False)
     pods   = get_pods(falcon)
-    print(WHALE)
-    if not args.identifier:  
-        print(f"Found {len(pods)} pods, use -Id to examine a specific pod")
+    tables = []
+    rogue_containers = []
+    headers = ["Pod ID","Unidentified Containers","Severity"]
+    if not args.identifier:
+        print(f"Found {len(pods)} pods with , use -Id to examine a specific pod")
         for pod in pods:
-            if not pod.podID:
+            if not pod.pod_id:
+                rogue_containers.append(pod)
+            else:
+                table = [[pod.pod_id],
+                        [len(pod.containers)],
+                        [pod.risk]]
+                tables.append(table)
+        print(tabulate(tables,headers,tablefmt="heavy_grid"))
 
-            table = [["Pod ID",pod.podID],
-                     ["Number of Unidentified Containers", len(pod.containers)],
-                     ["Severity", pod.risk]]
-            print(tabulate(table, tablefmt="heavy_grid"))
 
 if __name__ == "__main__":
     main()
