@@ -32,12 +32,18 @@ import os
 import logging
 from argparse import ArgumentParser, RawTextHelpFormatter, Namespace
 from falconpy import APIHarnessV2, APIError
+try:
+    from tqdm import tqdm
+except ImportError as no_tqdm:
+    raise SystemExit("The tqdm library must be installed.\n"
+                     "Install it with `python3 -m pip install tqdm`"
+                     ) from no_tqdm
 
 try:
     from termcolor import colored
 except ImportError as no_termcolor:
     raise SystemExit("The termcolor library must be installed.\n"
-                     "Install it with `python3 -m pip install termcolor"
+                     "Install it with `python3 -m pip install termcolor`"
                      ) from no_termcolor
 try:
     from tabulate import tabulate
@@ -88,7 +94,11 @@ def parse_command_line() -> ArgumentParser:
     return parsed
 
 class Pod:
-    """"""
+    """Class used to organize pods and their respective elements.
+
+    :param pod_id: The identifier for the pod
+    
+    """
     def __init__(self, pod_id) -> None:
 
         self.pod_id = pod_id
@@ -101,10 +111,9 @@ class Pod:
 
     def __str__(self) -> str:
         return tabulate([["Pod Name", self.name] if self.name else None,
-                         ["Containers", self.containers],
                          ["Unassessed Images", self.unassessed_images],
                          ["Severity", self.risk],
-                         ["Visible to k8s", self.visible]], 
+                         ["Visible to k8s", self.visible]],
                          tablefmt="heavy_grid")
 
 def get_pods(falcon: APIHarnessV2) -> list:
@@ -113,10 +122,10 @@ def get_pods(falcon: APIHarnessV2) -> list:
     resp = falcon.command("SearchAndReadUnidentifiedContainers")['body']['resources']
     # This is a bad way to circumvent crowdstrike images that display as high severity
     skip_image = "quay.io/crowdstrike/detection-container:latest"
+    assessed_images = []
     for pod in resp:
 
         cur_pod = Pod(pod.get('pod_id', None))
-        image_name = pod.get('image_name')
         # Retrieve impacted containers
         containers = pod.get('containers_impacted')
         for cur_container in containers:
@@ -128,16 +137,22 @@ def get_pods(falcon: APIHarnessV2) -> list:
             image_name = cur_image.get('image_name')
             if image_name not in cur_pod.unassessed_images:
                 cur_pod.unassessed_images.append(image_name)
+        
+        assessed_image = pod.get('assessed_images')
+        for cur_image in assessed_image:
+            a_image = cur_image.get('image_name')
+            if a_image == skip_image:
+                assessed_images.append(a_image)
 
         cur_pod.detection_timestamp = pod.get('detect_timestamp')
         cur_pod.risk    = pod.get('severity')
         cur_pod.name    = pod.get('pod_name')
         cur_pod.visible = pod.get('visible_to_k8s') if pod.get('visible_to_k8s') == "Yes" else False
 
-        if len(cur_pod.containers) > 0 and image_name is not skip_image:
+        if (len(cur_pod.containers) > 0) and len(assessed_images) == 0:
             pods.append(cur_pod)
-    return pods
 
+    return pods
 
 def delete_containers():
     pass
@@ -174,7 +189,7 @@ def main():
         for pod in pods:
             if pod.pod_id == args.identifier:
                 print(pod)
-    
+
     else:
         print(colored(f"Found {num_pods} {colored('pods with',"yellow")} {num_containers} {colored('unidentified containers, use -i to examine a specific pod','yellow')}\n", "yellow"))
         for pod in pods:
@@ -186,7 +201,6 @@ def main():
                         [pod.risk]]
                 tables.append(table)
         print(tabulate(tables,headers,tablefmt="heavy_grid"))
-
 
 if __name__ == "__main__":
     main()
