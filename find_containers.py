@@ -74,7 +74,7 @@ def parse_command_line() -> ArgumentParser:
     parser.add_argument("-v", "--verbose",
                         help="Display additional information about the containers.",
                         )
-    parser.add_argument("-Id", "-identifier",
+    parser.add_argument("-Id", "--identifier",
                         help="Select a specific pod_id")
     
     parsed = parser.parse_args()
@@ -100,30 +100,30 @@ class Pod:
                          ["Visible to k8s", self.visible]], 
                          tablefmt="heavy_grid")
 
-def get_pods(falcon: APIHarnessV2, args: ArgumentParser) -> list:
+def get_pods(falcon: APIHarnessV2) -> list:
     pods = []
     resp = falcon.command("SearchAndReadUnidentifiedContainers")['body']['resources']
     for pod in resp:
-        curPod = Pod(pod.get('pod_id'))
+        cur_pod = Pod(pod.get('pod_id'))
         
         # Retrieve impacted containers
         containers = pod.get('containers_impacted')
-        for curContainer in containers:
-            curPod.containers.append(curContainer.get('container_id'))
+        for cur_container in containers:
+            cur_pod.containers.append(cur_container.get('container_id'))
         
         # Retrieve unique unassessed images
         images = pod.get('unassessed_images')
-        for curImage in images:
-            imageName = curImage.get('image_name')
-            if imageName not in curPod.unassessedImages:
-                curPod.unassessedImages.append(imageName)
+        for cur_image in images:
+            imageName = cur_image.get('image_name')
+            if imageName not in cur_pod.unassessedImages:
+                cur_pod.unassessedImages.append(imageName)
         
-        curPod.detectionTimestamp = pod.get('detect_timestamp')
-        curPod.risk = pod.get('severity')
-        curPod.name = pod.get('pod_name')
-        curPod.visible = pod.get('visible_to_k8s') if pod.get('visible_to_k8s') == "Yes" else False
+        cur_pod.detectionTimestamp = pod.get('detect_timestamp')
+        cur_pod.risk = pod.get('severity')
+        cur_pod.name = pod.get('pod_name')
+        cur_pod.visible = pod.get('visible_to_k8s') if pod.get('visible_to_k8s') == "Yes" else False
 
-        pods.append(curPod)
+        pods.append(cur_pod)
     return pods
         
 
@@ -143,14 +143,17 @@ def main():
     """Execute main routine."""
     args   = parse_command_line()
     falcon = connect_api(key=args.key,secret=args.secret, debug=False)
-
+    pods   = get_pods(falcon)
     print(WHALE)
-    pods = get_pods(falcon, args)
-
-    if not args.identifier:
+    if not args.identifier:  
         print(f"Found {len(pods)} pods, use -Id to examine a specific pod")
         for pod in pods:
-            print(pod.podID)
+            if not pod.podID:
+
+            table = [["Pod ID",pod.podID],
+                     ["Number of Unidentified Containers", len(pod.containers)],
+                     ["Severity", pod.risk]]
+            print(tabulate(table, tablefmt="heavy_grid"))
 
 if __name__ == "__main__":
     main()
