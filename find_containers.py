@@ -176,7 +176,7 @@ def main():
     pods   = get_pods(falcon)
     tables = []
     rogue_containers = []
-    headers = ["Pod ID","Unidentified Containers","Severity"]
+    headers = ["Pod ID","Containers","Severity"]
     num_pods = colored(len(pods),"red")
     num_containers = colored(sum_containers(pods),"red")
     if args.identifier:
@@ -189,11 +189,11 @@ def main():
             if not pod.pod_id:
                 rogue_containers.append(pod)
             else:
-                table = [[pod.pod_id],
-                        [len(pod.containers)],
-                        [pod.risk]]
+                table = [pod.pod_id,
+                        len(pod.containers),
+                        pod.risk]
                 tables.append(table)
-        print(tabulate(tables,headers,tablefmt="heavy_grid"))
+        print(tabulate(tables,headers,tablefmt="heavy_grid", colalign=("left", "left", "left")))
 
 if __name__ == "__main__":
     main()
