@@ -82,6 +82,10 @@ def parse_command_line() -> ArgumentParser:
                         )
     parser.add_argument("-i", "--identifier",
                         help="Select a specific pod_id")
+    parser.add_argument("-de", "--debug",
+                        help="View API debugger",
+                        default=False,
+                        action="store_true")
     
     parsed = parser.parse_args()
 
@@ -154,7 +158,7 @@ def delete_containers():
 def write_file():
     pass
 
-def connect_api(key: str, secret: str, debug: bool):
+def connect_api(key: str, secret: str, debug: bool) -> APIHarnessV2:
     """Connects and returns an instance of the Uber class."""
     if debug:
         logging.basicConfig(level=logging.DEBUG)
@@ -172,7 +176,7 @@ def main():
     print(colored(WHALE, "blue"))
 
     args   = parse_command_line()
-    falcon = connect_api(key=args.key,secret=args.secret, debug=False)
+    falcon = connect_api(key=args.key,secret=args.secret, debug=args.debug)
     pods   = get_pods(falcon)
     tables = []
     rogue_containers = []
