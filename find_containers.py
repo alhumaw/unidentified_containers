@@ -32,12 +32,6 @@ import os
 import logging
 from argparse import ArgumentParser, RawTextHelpFormatter, Namespace
 from falconpy import APIHarnessV2, APIError
-try:
-    from tqdm import tqdm
-except ImportError as no_tqdm:
-    raise SystemExit("The tqdm library must be installed.\n"
-                     "Install it with `python3 -m pip install tqdm`"
-                     ) from no_tqdm
 
 try:
     from termcolor import colored
@@ -189,7 +183,6 @@ def main():
         for pod in pods:
             if pod.pod_id == args.identifier:
                 print(pod)
-
     else:
         print(colored(f"Found {num_pods} {colored('pods with',"yellow")} {num_containers} {colored('unidentified containers, use -i to examine a specific pod','yellow')}\n", "yellow"))
         for pod in pods:
