@@ -67,26 +67,32 @@ def parse_command_line() -> ArgumentParser:
                           help="CrowdStrike Falcon API Client ID",
                           required=True
                           )
+
     required.add_argument("-s", "--secret",
                           help="CrowdStrike Falcon API Client Secret",
                           required=True
                           )
+
     parser.add_argument("-d", "--delete",
                         help="Delete a specific unidentified container.",
                         )
+
     parser.add_argument("-da", "--delete-all",
                         help="Delete all unidentified containers.",
                         )
+
     parser.add_argument("-v", "--verbose",
                         help="Display additional information about the containers.",
                         )
+
     parser.add_argument("-i", "--identifier",
                         help="Select a specific pod_id")
+
     parser.add_argument("-de", "--debug",
                         help="View API debugger",
                         default=False,
                         action="store_true")
-    
+
     parsed = parser.parse_args()
 
     return parsed
@@ -109,21 +115,23 @@ class Pod:
 
     def __str__(self) -> str:
         return tabulate([["Pod Name", self.name] if self.name else None,
-                         ["Unassessed Images", self.unassessed_images],
+                         ["Unassessed Images", '\n'.join(self.unassessed_images)],
                          ["Severity", self.risk],
-                         ["Visible to k8s", self.visible]],
+                         ["Visible to k8s", self.visible],
+                         ["Unidentfied Containers", len(self.containers)],
+                         ["Containers", '\n'.join(self.containers)]],
                          tablefmt="heavy_grid")
 
 def get_pods(falcon: APIHarnessV2) -> list:
     """Parses API response to build Pods. Returns a list of Pods."""
     pods = []
     resp = falcon.command("SearchAndReadUnidentifiedContainers")['body']['resources']
-    # This is a bad way to circumvent crowdstrike images that display as high severity
     skip_image = "quay.io/crowdstrike/detection-container:latest"
     assessed_images = []
     for pod in resp:
 
         cur_pod = Pod(pod.get('pod_id', None))
+        
         # Retrieve impacted containers
         containers = pod.get('containers_impacted')
         for cur_container in containers:
@@ -135,7 +143,8 @@ def get_pods(falcon: APIHarnessV2) -> list:
             image_name = cur_image.get('image_name')
             if image_name not in cur_pod.unassessed_images:
                 cur_pod.unassessed_images.append(image_name)
-        
+
+        # Retrieve asssessed images
         assessed_image = pod.get('assessed_images')
         for cur_image in assessed_image:
             a_image = cur_image.get('image_name')
@@ -146,6 +155,7 @@ def get_pods(falcon: APIHarnessV2) -> list:
         cur_pod.risk    = pod.get('severity')
         cur_pod.name    = pod.get('pod_name')
         cur_pod.visible = pod.get('visible_to_k8s') if pod.get('visible_to_k8s') == "Yes" else False
+        
 
         if (len(cur_pod.containers) > 0) and len(assessed_images) == 0:
             pods.append(cur_pod)
@@ -171,6 +181,27 @@ def sum_containers(pods: Pod) -> int:
         count += len(pod.containers)
     return count
 
+def print_pod_overview(pods: Pod):
+    """Prints an overview of all pods, their respective container counts, and the severity"""
+    num_pods = colored(len(pods),"red")
+    num_containers = colored(sum_containers(pods),"red")
+    tables = []
+    rogue_containers = []
+    headers = ["Pod ID","Containers","Severity"]
+    print(colored(f"Found {num_pods} "
+                      f"{colored('pods with',"yellow")} {num_containers} "
+                      f"{colored('unidentified containers, use -i to examine a specific pod','yellow')}\n", "yellow"))
+    for pod in pods:
+        if not pod.pod_id:
+            rogue_containers.append(pod)
+        else:
+            table = [pod.pod_id,
+                    len(pod.containers),
+                    pod.risk]
+            tables.append(table)
+    print(tabulate(tables,headers,tablefmt="heavy_grid", colalign=("left", "left", "left")))
+
+
 def main():
     """Execute main routine."""
     print(colored(WHALE, "blue"))
@@ -178,26 +209,14 @@ def main():
     args   = parse_command_line()
     falcon = connect_api(key=args.key,secret=args.secret, debug=args.debug)
     pods   = get_pods(falcon)
-    tables = []
-    rogue_containers = []
-    headers = ["Pod ID","Containers","Severity"]
-    num_pods = colored(len(pods),"red")
-    num_containers = colored(sum_containers(pods),"red")
+
     if args.identifier:
         for pod in pods:
             if pod.pod_id == args.identifier:
                 print(pod)
     else:
-        print(colored(f"Found {num_pods} {colored('pods with',"yellow")} {num_containers} {colored('unidentified containers, use -i to examine a specific pod','yellow')}\n", "yellow"))
-        for pod in pods:
-            if not pod.pod_id:
-                rogue_containers.append(pod)
-            else:
-                table = [pod.pod_id,
-                        len(pod.containers),
-                        pod.risk]
-                tables.append(table)
-        print(tabulate(tables,headers,tablefmt="heavy_grid", colalign=("left", "left", "left")))
+        print_pod_overview(pods)
+    
 
 if __name__ == "__main__":
     main()
