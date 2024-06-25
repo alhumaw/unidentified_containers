@@ -27,12 +27,12 @@ and containers launched outside the Kubernetes orchestrator.
 Developed by @alhumaw
 
 """
+import re
 import json
 import os
 import logging
 from argparse import ArgumentParser, RawTextHelpFormatter, Namespace
 from falconpy import APIHarnessV2, APIError
-
 try:
     from termcolor import colored
 except ImportError as no_termcolor:
@@ -81,12 +81,11 @@ def parse_command_line() -> ArgumentParser:
                         help="Delete all unidentified containers.",
                         )
 
-    parser.add_argument("-v", "--verbose",
-                        help="Display additional information about the containers.",
-                        )
-
     parser.add_argument("-i", "--identifier",
                         help="Select a specific pod_id")
+    
+    parser.add_argument("-t", "--sort-timestamp",
+                        help="Sort by most recent detection")
 
     parser.add_argument("-de", "--debug",
                         help="View API debugger",
@@ -113,6 +112,10 @@ class Pod:
         self.name = ""
         self.visible = False
 
+    def container_count(self):
+        """Returns the amount of containers in the pod"""
+        return len(self.containers)
+
     def __str__(self) -> str:
         return tabulate([["Pod Name", self.name] if self.name else None,
                          ["Unassessed Images", '\n'.join(self.unassessed_images)],
@@ -122,7 +125,7 @@ class Pod:
                          ["Containers", '\n'.join(self.containers)]],
                          tablefmt="heavy_grid")
 
-def get_pods(falcon: APIHarnessV2) -> list:
+def get_pods(falcon: APIHarnessV2) -> list[Pod]:
     """Parses API response to build Pods. Returns a list of Pods."""
     pods = []
     resp = falcon.command("SearchAndReadUnidentifiedContainers")['body']['resources']
@@ -131,7 +134,7 @@ def get_pods(falcon: APIHarnessV2) -> list:
     for pod in resp:
 
         cur_pod = Pod(pod.get('pod_id', None))
-        
+
         # Retrieve impacted containers
         containers = pod.get('containers_impacted')
         for cur_container in containers:
@@ -155,7 +158,7 @@ def get_pods(falcon: APIHarnessV2) -> list:
         cur_pod.risk    = pod.get('severity')
         cur_pod.name    = pod.get('pod_name')
         cur_pod.visible = pod.get('visible_to_k8s') if pod.get('visible_to_k8s') == "Yes" else False
-        
+
 
         if (len(cur_pod.containers) > 0) and len(assessed_images) == 0:
             pods.append(cur_pod)
@@ -163,25 +166,47 @@ def get_pods(falcon: APIHarnessV2) -> list:
     return pods
 
 def delete_containers():
+    # TODO: Implement function
     pass
 
 def write_file():
+    # TODO: Implement function
     pass
 
 def connect_api(key: str, secret: str, debug: bool) -> APIHarnessV2:
     """Connects and returns an instance of the Uber class."""
-    if debug:
-        logging.basicConfig(level=logging.DEBUG)
-    return APIHarnessV2(client_id=key, client_secret=secret, debug=debug)
+    try:
+        if debug:
+            logging.basicConfig(level=logging.DEBUG)
+        return APIHarnessV2(client_id=key, client_secret=secret, debug=debug)
+    except APIError as e:
+        print(f"Failed to connect to API: {e}")
+        
 
 def sum_containers(pods: Pod) -> int:
     """Returns the total number of all containers"""
     count = 0
     for pod in pods:
-        count += len(pod.containers)
+        count += int(pod.container_count())
     return count
 
-def print_pod_overview(pods: Pod):
+def search_result(identifier: str, pods: Pod) -> None:
+    """Identifies the pod being referenced by user"""
+    found = False
+    pattern = r'^([a-z]|[0-9]){8}-(([a-z]|[0-9]){4}-){3}([a-z]|[0-9]){12}'
+    pattern = re.compile(pattern)
+    if not pattern.match(identifier):
+        print("Invalid ID format, EX: 98e6v56a-a899-4f1b-acd7-333202aee88d")
+    else:
+        for pod in pods:
+            if pod.pod_id == identifier:
+                print(pod)
+                found = True
+        if not found:
+            print(f"Could not find Pod using Pod ID: {identifier}")
+
+
+def print_pod_overview(pods: Pod) -> None:
     """Prints an overview of all pods, their respective container counts, and the severity"""
     num_pods = colored(len(pods),"red")
     num_containers = colored(sum_containers(pods),"red")
@@ -205,18 +230,15 @@ def print_pod_overview(pods: Pod):
 def main():
     """Execute main routine."""
     print(colored(WHALE, "blue"))
-
     args   = parse_command_line()
     falcon = connect_api(key=args.key,secret=args.secret, debug=args.debug)
     pods   = get_pods(falcon)
 
     if args.identifier:
-        for pod in pods:
-            if pod.pod_id == args.identifier:
-                print(pod)
+        search_result(args.identifier, pods)
     else:
         print_pod_overview(pods)
-    
+
 
 if __name__ == "__main__":
     main()
