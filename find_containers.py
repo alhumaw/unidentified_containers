@@ -9,8 +9,7 @@
 `-------'                         `-------'                         
 
 This sample identifies containers tracked by the Falcon Sensor that 
-were launched outside the control of the Kubernetes orchestrator,
-then optionally deletes these containers.
+were launched outside the control of the Kubernetes orchestrator.
 
 This can happen when the worker nodes or Kubernetes orchestrator are compromised. 
 For example, an adversary can use a compromised node to directly run a container, 
