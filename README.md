@@ -11,7 +11,7 @@ Containers launched outside of Kubernetes control can indicate:
 - Potential adversary activity, such as running malicious containers directly on a node
 - Security misconfigurations
 
-Such containers are not visible to Kubernetes, making them a potential security risk that should be investigated.
+Such containers are not visible, making them a potential security risk that should be investigated.
 
 ## Features
 
